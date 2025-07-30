@@ -1,5 +1,6 @@
 const venom = require('venom-bot');
 const axios = require('axios');
+const GoogleSheetsIntegration = require('./google-sheets');
 require('dotenv').config();
 
 class MasjidWhatsAppBot {
@@ -7,7 +8,8 @@ class MasjidWhatsAppBot {
     this.client = null;
     this.n8nWebhookUrl = process.env.N8N_WEBHOOK_URL;
     this.sessionName = process.env.WA_SESSION_NAME || 'masjid-session';
-    this.adminNumbers = process.env.ADMIN_NUMBERS ? process.env.ADMIN_NUMBERS.split(',') : [];
+    this.adminNumbers = process.env.ADMIN_NUMBERS ? process.env.ADMIN_NUMBERS.split(',').map(num => num.trim()) : [];
+    this.googleSheets = new GoogleSheetsIntegration();
   }
 
   async initialize() {
@@ -67,13 +69,16 @@ class MasjidWhatsAppBot {
         // Extract phone number without @c.us
         const phoneNumber = message.from.replace('@c.us', '');
         
+        // Check if user is admin (check both formats)
+        const isAdmin = this.adminNumbers.includes(phoneNumber) || this.adminNumbers.includes(message.from);
+        
         // Prepare message data for n8n
         const messageData = {
           number: phoneNumber,
           text: message.body,
           timestamp: new Date().toISOString(),
           messageId: message.id,
-          isAdmin: this.adminNumbers.includes(phoneNumber)
+          isAdmin: isAdmin
         };
 
         // Send to n8n webhook
@@ -83,6 +88,19 @@ class MasjidWhatsAppBot {
           // Send reply back to user
           await this.client.sendText(message.from, response.reply);
           console.log(`✅ Balasan dikirim ke ${phoneNumber}`);
+          
+          // Log to Google Sheets
+          try {
+            await this.googleSheets.logMessage({
+              number: phoneNumber,
+              text: message.body,
+              messageType: response.messageType || 'unknown',
+              reply: response.reply || '',
+              isAdmin: isAdmin
+            });
+          } catch (error) {
+            console.error('⚠️ Error logging to Google Sheets:', error.message);
+          }
         }
 
       } catch (error) {

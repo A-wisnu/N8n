@@ -306,7 +306,7 @@
       "main": [
         [
           {
-            "node": "Get Prayer Schedule",
+            "node": "Format Prayer Response",
             "type": "main",
             "index": 0
           }

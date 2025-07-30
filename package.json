@@ -7,7 +7,9 @@
     "start": "node wa-bot/venom.js",
     "dev": "nodemon wa-bot/venom.js",
     "build": "echo 'Build completed'",
-    "test": "echo 'No tests specified'"
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
   },
   "keywords": ["whatsapp", "bot", "masjid", "prayer", "ai", "n8n"],
   "author": "Masjid AI Team",
@@ -22,7 +24,8 @@
     "googleapis": "^128.0.0"
   },
   "devDependencies": {
-    "nodemon": "^3.0.0"
+    "nodemon": "^3.0.0",
+    "jest": "^29.7.0"
   },
   "engines": {
     "node": ">=16.0.0"
