@@ -342,9 +342,3 @@ MIT License - Lihat file `LICENSE` untuk detail lengkap.
 - **OpenRouter** - AI API gateway
 - **MyQuran API** - Prayer times data
 - **Railway** - Hosting platform
-
----
-
-**📱 Dibuat dengan ❤️ untuk jamaah masjid di seluruh Indonesia**
-
-*Semoga bermanfaat untuk kemudahan ibadah dan dakwah digital* 🤲
