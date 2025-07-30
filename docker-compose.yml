@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  n8n:
+    build:
+      context: ./n8n
+      dockerfile: Dockerfile
+    container_name: masjid-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=false
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678
+      - N8N_EDITOR_BASE_URL=/
+      - N8N_DISABLE_UI=false
+      - N8N_METRICS=false
+      - EXECUTIONS_PROCESS=main
+      - EXECUTIONS_MODE=regular
+      - N8N_LOG_LEVEL=info
+      - N8N_LOG_OUTPUT=console
+      - GENERIC_TIMEZONE=Asia/Jakarta
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-mistralai/mistral-7b-instruct}
+      - MYQURAN_API_BASE=${MYQURAN_API_BASE:-https://api.myquran.com/v1}
+      - DEFAULT_CITY=${DEFAULT_CITY:-Jakarta}
+      - DEFAULT_CITY_ID=${DEFAULT_CITY_ID:-1301}
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n/workflows:/home/node/.n8n/workflows
+    networks:
+      - masjid-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  whatsapp-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.wa-bot
+    container_name: masjid-wa-bot
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - WA_SESSION_NAME=masjid-session
+      - N8N_WEBHOOK_URL=http://n8n:5678/webhook/wa
+      - ADMIN_NUMBERS=${ADMIN_NUMBERS}
+      - PORT=3000
+      - NODE_ENV=development
+    volumes:
+      - wa_sessions:/app/sessions
+      - ./wa-bot:/app/wa-bot
+    networks:
+      - masjid-network
+    depends_on:
+      - n8n
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+volumes:
+  n8n_data:
+    driver: local
+  wa_sessions:
+    driver: local
+
+networks:
+  masjid-network:
+    driver: bridge
