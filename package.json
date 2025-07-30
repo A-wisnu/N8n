@@ -4,9 +4,9 @@
   "description": "AI Agent otomatis untuk masjid dengan WhatsApp bot, jadwal sholat, dan sistem pengumuman",
   "main": "index.js",
   "scripts": {
-    "start": "node wa-bot/venom.js",
+    "start": "node wa-bot/waha-bot.js",
     "server": "node server.js",
-    "dev": "nodemon wa-bot/venom.js",
+    "dev": "nodemon wa-bot/waha-bot.js",
     "dev:server": "nodemon server.js",
     "build": "echo 'Build completed'",
     "test": "jest",
@@ -19,7 +19,8 @@
     "masjid",
     "prayer",
     "ai",
-    "n8n"
+    "n8n",
+    "waha"
   ],
   "author": "Masjid AI Team",
   "license": "MIT",
@@ -29,7 +30,7 @@
     "express": "^4.21.2",
     "moment": "^2.29.0",
     "moment-timezone": "^0.5.43",
-    "venom-bot": "^5.0.0"
+    "ws": "^8.14.0"
   },
   "devDependencies": {
     "jest": "^29.7.0",
