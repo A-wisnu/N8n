@@ -141,18 +141,20 @@ Authorization: Bearer YOUR_API_KEY
 **Model yang Digunakan:**
 - `z-ai/glm-4.5-air:free` (Model gratis dengan performa baik)
 
-### 📊 Google Sheets Integration
+### 📊 Google Sheets Integration (Native API)
 
-**API Base:**
-```
-https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}/values/{RANGE}?key={API_KEY}
-```
+**Native API dengan Service Account:**
+- Menggunakan `google-spreadsheet` library
+- Service Account authentication
+- Auto sheet creation dan management
+- Better error handling dan security
 
 **Sheets yang Digunakan:**
 - `MessageLog` - Log semua pesan
-- `FAQ` - Knowledge base FAQ
+- `FAQ` - Knowledge base FAQ  
 - `PrayerLog` - Log permintaan jadwal sholat
 - `AdminLog` - Log aktivitas admin
+- `Announcements` - Template pengumuman
 
 ## 🔄 Alur Sistem
 

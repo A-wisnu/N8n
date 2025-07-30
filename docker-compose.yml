@@ -27,8 +27,9 @@ services:
       - OPENROUTER_MODEL=${OPENROUTER_MODEL:-z-ai/glm-4.5-air:free}
       - PRAYER_API_BASE=${PRAYER_API_BASE:-https://api.aladhan.com/v1}
       - MYQURAN_API_BASE=${MYQURAN_API_BASE:-https://api.myquran.com/v2}
-      - GOOGLE_SHEETS_API_KEY=${GOOGLE_SHEETS_API_KEY}
       - GOOGLE_SHEETS_ID=${GOOGLE_SHEETS_ID}
+      - GOOGLE_SERVICE_ACCOUNT_EMAIL=${GOOGLE_SERVICE_ACCOUNT_EMAIL}
+      - GOOGLE_PRIVATE_KEY=${GOOGLE_PRIVATE_KEY}
       - DEFAULT_CITY=${DEFAULT_CITY:-Jakarta}
       - DEFAULT_CITY_ID=${DEFAULT_CITY_ID:-1301}
     volumes:
@@ -57,6 +58,9 @@ services:
       - ADMIN_NUMBERS=${ADMIN_NUMBERS}
       - PORT=3000
       - NODE_ENV=development
+      - GOOGLE_SHEETS_ID=${GOOGLE_SHEETS_ID}
+      - GOOGLE_SERVICE_ACCOUNT_EMAIL=${GOOGLE_SERVICE_ACCOUNT_EMAIL}
+      - GOOGLE_PRIVATE_KEY=${GOOGLE_PRIVATE_KEY}
     volumes:
       - wa_sessions:/app/sessions
       - ./wa-bot:/app/wa-bot
