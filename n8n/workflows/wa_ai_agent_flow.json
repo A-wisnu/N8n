@@ -45,7 +45,7 @@
     },
     {
       "parameters": {
-        "url": "https://api.myquran.com/v1/sholat/kota/cari/{{$json.analysis.city}}",
+        "url": "https://api.aladhan.com/v1/timingsByCity?city={{$json.analysis.city}}&country=ID&method=2",
         "options": {
           "timeout": 10000
         }
@@ -58,7 +58,7 @@
     },
     {
       "parameters": {
-        "functionCode": "// Ambil ID kota dari response API\nconst response = $json;\nlet cityId = null;\nlet cityName = null;\n\nif (response.status && response.data && response.data.length > 0) {\n  // Ambil kota pertama dari hasil pencarian\n  const firstCity = response.data[0];\n  cityId = firstCity.id;\n  cityName = firstCity.lokasi;\n} else {\n  // Fallback ke Jakarta jika kota tidak ditemukan\n  cityId = process.env.DEFAULT_CITY_ID || '1301';\n  cityName = process.env.DEFAULT_CITY || 'Jakarta';\n}\n\n// Get current date\nconst now = new Date();\nconst year = now.getFullYear();\nconst month = String(now.getMonth() + 1).padStart(2, '0');\nconst date = String(now.getDate()).padStart(2, '0');\n\nreturn {\n  cityId: cityId,\n  cityName: cityName,\n  year: year,\n  month: month,\n  date: date,\n  originalRequest: $input.first().json\n};"
+        "functionCode": "// Process Aladhan API response untuk jadwal sholat\nconst response = $json;\nconst originalRequest = $input.first().json;\n\nlet cityName = originalRequest.analysis.city;\nlet prayerData = null;\n\nif (response.code === 200 && response.data && response.data.timings) {\n  // Response dari Aladhan API berhasil\n  prayerData = {\n    success: true,\n    source: 'aladhan',\n    city: response.data.meta.timezone || cityName,\n    date: response.data.date.readable,\n    timings: response.data.timings\n  };\n} else {\n  // Jika Aladhan gagal, return error untuk fallback ke MyQuran API\n  prayerData = {\n    success: false,\n    source: 'aladhan',\n    city: cityName,\n    error: 'Aladhan API failed'\n  };\n}\n\nreturn {\n  ...prayerData,\n  originalRequest: originalRequest\n};"
       },
       "id": "process-city-data",
       "name": "Process City Data",
@@ -68,7 +68,7 @@
     },
     {
       "parameters": {
-        "url": "https://api.myquran.com/v1/sholat/jadwal/{{$json.cityId}}/{{$json.year}}/{{$json.month}}/{{$json.date}}",
+        "url": "https://api.myquran.com/v2/sholat/jadwal/{{$json.cityId}}/{{$json.year}}/{{$json.month}}/{{$json.date}}",
         "options": {
           "timeout": 10000
         }
@@ -81,7 +81,7 @@
     },
     {
       "parameters": {
-        "functionCode": "// Format jadwal sholat untuk WhatsApp\nconst response = $json;\nconst cityData = $input.first().json;\n\nlet replyMessage = '';\n\nif (response.status && response.data) {\n  const schedule = response.data.jadwal;\n  const cityName = cityData.cityName;\n  const date = response.data.tanggal;\n  \n  replyMessage = `🕌 *Jadwal Sholat ${cityName}*\\n`;\n  replyMessage += `📅 ${date}\\n\\n`;\n  replyMessage += `🌅 Subuh: ${schedule.subuh}\\n`;\n  replyMessage += `🌞 Dzuhur: ${schedule.dzuhur}\\n`;\n  replyMessage += `🌤️ Ashar: ${schedule.ashar}\\n`;\n  replyMessage += `🌅 Maghrib: ${schedule.maghrib}\\n`;\n  replyMessage += `🌙 Isya: ${schedule.isya}\\n\\n`;\n  replyMessage += `🤲 Semoga Allah memudahkan ibadah kita`;\n} else {\n  replyMessage = '🙏 Maaf, jadwal sholat tidak dapat diambil saat ini. Silakan coba lagi nanti.';\n}\n\nreturn {\n  reply: replyMessage,\n  number: cityData.originalRequest.number\n};"
+        "functionCode": "// Format jadwal sholat untuk WhatsApp\nconst prayerData = $input.first().json;\nconst originalRequest = prayerData.originalRequest;\n\nlet replyMessage = '';\n\nif (prayerData.success && prayerData.timings) {\n  const timings = prayerData.timings;\n  const cityName = prayerData.city;\n  const date = prayerData.date;\n  \n  replyMessage = `🕌 *Jadwal Sholat ${cityName}*\\n`;\n  replyMessage += `📅 ${date}\\n\\n`;\n  \n  // Format waktu dari Aladhan API\n  if (prayerData.source === 'aladhan') {\n    replyMessage += `🌅 Subuh: ${timings.Fajr}\\n`;\n    replyMessage += `🌞 Dzuhur: ${timings.Dhuhr}\\n`;\n    replyMessage += `🌤️ Ashar: ${timings.Asr}\\n`;\n    replyMessage += `🌅 Maghrib: ${timings.Maghrib}\\n`;\n    replyMessage += `🌙 Isya: ${timings.Isha}\\n\\n`;\n  } else {\n    // Format untuk MyQuran API v2 (jika berbeda)\n    replyMessage += `🌅 Subuh: ${timings.subuh || timings.Fajr}\\n`;\n    replyMessage += `🌞 Dzuhur: ${timings.dzuhur || timings.Dhuhr}\\n`;\n    replyMessage += `🌤️ Ashar: ${timings.ashar || timings.Asr}\\n`;\n    replyMessage += `🌅 Maghrib: ${timings.maghrib || timings.Maghrib}\\n`;\n    replyMessage += `🌙 Isya: ${timings.isya || timings.Isha}\\n\\n`;\n  }\n  \n  replyMessage += `🤲 Semoga Allah memudahkan ibadah kita\\n`;\n  replyMessage += `📡 _Sumber: ${prayerData.source === 'aladhan' ? 'Aladhan API' : 'MyQuran API'}_`;\n} else {\n  replyMessage = '🙏 Maaf, jadwal sholat tidak dapat diambil saat ini. Silakan coba lagi nanti.';\n}\n\nreturn {\n  reply: replyMessage,\n  number: originalRequest.number\n};"
       },
       "id": "format-prayer-response",
       "name": "Format Prayer Response",
@@ -128,7 +128,7 @@
           "parameters": [
             {
               "name": "model",
-              "value": "{{$env.OPENROUTER_MODEL || 'mistralai/mistral-7b-instruct'}}"
+              "value": "{{$env.OPENROUTER_MODEL || 'z-ai/glm-4.5-air:free'}}"
             },
             {
               "name": "messages",

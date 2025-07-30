@@ -24,10 +24,12 @@
 - ✅ Fallback responses
 
 ### 🕌 API Integrations
-- ✅ MyQuran API untuk jadwal sholat
-- ✅ OpenRouter AI untuk chat responses
+- ✅ Aladhan API (primary) untuk jadwal sholat yang reliable
+- ✅ MyQuran API v2 (fallback) untuk jadwal sholat
+- ✅ OpenRouter AI dengan model z-ai/glm-4.5-air:free
+- ✅ Google Sheets API untuk logging dan knowledge base
 - ✅ City detection dan prayer time formatting
-- ✅ Error handling untuk semua API calls
+- ✅ Error handling dan fallback system
 
 ### 🐳 Docker & Deployment
 - ✅ `Dockerfile` untuk n8n service
@@ -86,8 +88,9 @@ npm run dev
 |----------|----------------|--------|
 | WhatsApp Bot | Venom.js | ✅ Complete |
 | Workflow Engine | n8n | ✅ Complete |
-| AI Chat | OpenRouter | ✅ Complete |
-| Prayer API | MyQuran | ✅ Complete |
+| AI Chat | OpenRouter (z-ai/glm-4.5-air:free) | ✅ Complete |
+| Prayer API | Aladhan + MyQuran v2 | ✅ Complete |
+| Logging System | Google Sheets API | ✅ Complete |
 | Containerization | Docker | ✅ Complete |
 | Deployment | Railway | ✅ Complete |
 | Documentation | Markdown | ✅ Complete |

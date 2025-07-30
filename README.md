@@ -77,8 +77,8 @@ WA_SESSION_NAME=masjid-session
 N8N_WEBHOOK_URL=https://your-n8n-railway.up.railway.app/webhook/wa
 
 # OpenRouter AI Configuration
-OPENROUTER_API_KEY=your_openrouter_api_key_here
-OPENROUTER_MODEL=mistralai/mistral-7b-instruct
+OPENROUTER_API_KEY=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
+OPENROUTER_MODEL=z-ai/glm-4.5-air:free
 
 # Default City for Prayer Times
 DEFAULT_CITY=Jakarta
@@ -118,29 +118,41 @@ npm run dev
 
 ## 🔗 API yang Digunakan
 
-### 🕌 Jadwal Sholat (API MyQuran)
+### 🕌 Jadwal Sholat (API Aladhan + MyQuran)
 
-**Cari ID Kota:**
+**Primary API (Aladhan):**
 ```
-GET https://api.myquran.com/v1/sholat/kota/cari/{namaKota}
-```
-
-**Jadwal Sholat Harian:**
-```
-GET https://api.myquran.com/v1/sholat/jadwal/{id_kota}/{tahun}/{bulan}/{tanggal}
+GET https://api.aladhan.com/v1/timingsByCity?city={city}&country=ID&method=2
 ```
 
-### 🤖 AI Gratis dari OpenRouter
+**Fallback API (MyQuran v2):**
+```
+GET https://api.myquran.com/v2/sholat/jadwal/{id_kota}/{tahun}/{bulan}/{tanggal}
+```
+
+### 🤖 AI dari OpenRouter
 
 **Endpoint:**
 ```
 POST https://openrouter.ai/api/v1/chat/completions
-Authorization: Bearer YOUR_FREE_KEY
+Authorization: Bearer YOUR_API_KEY
 ```
 
-**Model Gratis yang Tersedia:**
-- `mistralai/mistral-7b-instruct`
-- `huggingfaceh4/zephyr-7b-beta`
+**Model yang Digunakan:**
+- `z-ai/glm-4.5-air:free` (Model gratis dengan performa baik)
+
+### 📊 Google Sheets Integration
+
+**API Base:**
+```
+https://sheets.googleapis.com/v4/spreadsheets/{SHEET_ID}/values/{RANGE}?key={API_KEY}
+```
+
+**Sheets yang Digunakan:**
+- `MessageLog` - Log semua pesan
+- `FAQ` - Knowledge base FAQ
+- `PrayerLog` - Log permintaan jadwal sholat
+- `AdminLog` - Log aktivitas admin
 
 ## 🔄 Alur Sistem
 

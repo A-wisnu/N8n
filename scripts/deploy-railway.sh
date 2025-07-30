@@ -92,8 +92,11 @@ railway variables set GENERIC_TIMEZONE=Asia/Jakarta
 
 # Set API keys and configuration
 railway variables set OPENROUTER_API_KEY="$OPENROUTER_API_KEY"
-railway variables set OPENROUTER_MODEL="${OPENROUTER_MODEL:-mistralai/mistral-7b-instruct}"
-railway variables set MYQURAN_API_BASE="${MYQURAN_API_BASE:-https://api.myquran.com/v1}"
+railway variables set OPENROUTER_MODEL="${OPENROUTER_MODEL:-z-ai/glm-4.5-air:free}"
+railway variables set PRAYER_API_BASE="${PRAYER_API_BASE:-https://api.aladhan.com/v1}"
+railway variables set MYQURAN_API_BASE="${MYQURAN_API_BASE:-https://api.myquran.com/v2}"
+railway variables set GOOGLE_SHEETS_API_KEY="$GOOGLE_SHEETS_API_KEY"
+railway variables set GOOGLE_SHEETS_ID="$GOOGLE_SHEETS_ID"
 railway variables set DEFAULT_CITY="${DEFAULT_CITY:-Jakarta}"
 railway variables set DEFAULT_CITY_ID="${DEFAULT_CITY_ID:-1301}"
 railway variables set ADMIN_NUMBERS="$ADMIN_NUMBERS"

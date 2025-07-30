@@ -24,8 +24,11 @@ services:
       - N8N_LOG_OUTPUT=console
       - GENERIC_TIMEZONE=Asia/Jakarta
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-mistralai/mistral-7b-instruct}
-      - MYQURAN_API_BASE=${MYQURAN_API_BASE:-https://api.myquran.com/v1}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-z-ai/glm-4.5-air:free}
+      - PRAYER_API_BASE=${PRAYER_API_BASE:-https://api.aladhan.com/v1}
+      - MYQURAN_API_BASE=${MYQURAN_API_BASE:-https://api.myquran.com/v2}
+      - GOOGLE_SHEETS_API_KEY=${GOOGLE_SHEETS_API_KEY}
+      - GOOGLE_SHEETS_ID=${GOOGLE_SHEETS_ID}
       - DEFAULT_CITY=${DEFAULT_CITY:-Jakarta}
       - DEFAULT_CITY_ID=${DEFAULT_CITY_ID:-1301}
     volumes:
