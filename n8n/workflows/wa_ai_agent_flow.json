@@ -1,0 +1,449 @@
+{
+  "name": "Masjid AI Agent Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "wa",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-wa",
+      "name": "WhatsApp Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "wa-messages"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Analisis pesan masuk dari WhatsApp\nconst message = $json;\nconst text = message.text.toLowerCase().trim();\nconst isAdmin = message.isAdmin || false;\n\n// Deteksi jenis permintaan\nlet messageType = 'general';\nlet response = {};\n\n// Cek apakah pesan tentang sholat\nif (text.includes('sholat') || text.includes('solat') || \n    text.includes('maghrib') || text.includes('subuh') || \n    text.includes('dzuhur') || text.includes('ashar') || \n    text.includes('isya') || text.includes('jadwal')) {\n  messageType = 'prayer_schedule';\n  \n  // Extract city if mentioned\n  const cityKeywords = ['jakarta', 'surabaya', 'bandung', 'medan', 'semarang', 'yogyakarta', 'malang', 'solo', 'depok', 'bekasi'];\n  let city = process.env.DEFAULT_CITY || 'Jakarta';\n  \n  for (const keyword of cityKeywords) {\n    if (text.includes(keyword)) {\n      city = keyword.charAt(0).toUpperCase() + keyword.slice(1);\n      break;\n    }\n  }\n  \n  response = {\n    type: 'prayer_schedule',\n    city: city,\n    originalMessage: message.text\n  };\n}\n// Cek apakah pesan broadcast dari admin\nelse if ((text.startsWith('broadcast:') || text.startsWith('/broadcast')) && isAdmin) {\n  messageType = 'admin_broadcast';\n  const broadcastMessage = text.replace(/^(broadcast:|\/broadcast)\\s*/, '');\n  \n  response = {\n    type: 'admin_broadcast',\n    message: broadcastMessage,\n    adminNumber: message.number\n  };\n}\n// Cek apakah pesan command admin\nelse if (text.startsWith('/') && isAdmin) {\n  messageType = 'admin_command';\n  const command = text.substring(1).split(' ')[0];\n  \n  response = {\n    type: 'admin_command',\n    command: command,\n    adminNumber: message.number,\n    fullText: text\n  };\n}\n// Pesan umum untuk AI\nelse {\n  messageType = 'ai_chat';\n  response = {\n    type: 'ai_chat',\n    question: message.text,\n    context: 'masjid'\n  };\n}\n\n// Return hasil analisis\nreturn {\n  ...message,\n  messageType: messageType,\n  analysis: response\n};"
+      },
+      "id": "message-analyzer",
+      "name": "Message Analyzer",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.messageType}}",
+              "operation": "equal",
+              "value2": "prayer_schedule"
+            }
+          ]
+        }
+      },
+      "id": "switch-message-type",
+      "name": "Switch Message Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.aladhan.com/v1/timingsByCity?city={{$json.analysis.city}}&country=ID&method=2",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "get-city-id",
+      "name": "Get City ID",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Process Aladhan API response untuk jadwal sholat\nconst response = $json;\nconst originalRequest = $input.first().json;\n\nlet cityName = originalRequest.analysis.city;\nlet prayerData = null;\n\nif (response.code === 200 && response.data && response.data.timings) {\n  // Response dari Aladhan API berhasil\n  prayerData = {\n    success: true,\n    source: 'aladhan',\n    city: response.data.meta.timezone || cityName,\n    date: response.data.date.readable,\n    timings: response.data.timings\n  };\n} else {\n  // Jika Aladhan gagal, return error untuk fallback ke MyQuran API\n  prayerData = {\n    success: false,\n    source: 'aladhan',\n    city: cityName,\n    error: 'Aladhan API failed'\n  };\n}\n\nreturn {\n  ...prayerData,\n  originalRequest: originalRequest\n};"
+      },
+      "id": "process-city-data",
+      "name": "Process City Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "url": "https://api.myquran.com/v2/sholat/jadwal/{{$json.cityId}}/{{$json.year}}/{{$json.month}}/{{$json.date}}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "get-prayer-schedule",
+      "name": "Get Prayer Schedule",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Format jadwal sholat untuk WhatsApp\nconst prayerData = $input.first().json;\nconst originalRequest = prayerData.originalRequest;\n\nlet replyMessage = '';\n\nif (prayerData.success && prayerData.timings) {\n  const timings = prayerData.timings;\n  const cityName = prayerData.city;\n  const date = prayerData.date;\n  \n  replyMessage = `🕌 *Jadwal Sholat ${cityName}*\\n`;\n  replyMessage += `📅 ${date}\\n\\n`;\n  \n  // Format waktu dari Aladhan API\n  if (prayerData.source === 'aladhan') {\n    replyMessage += `🌅 Subuh: ${timings.Fajr}\\n`;\n    replyMessage += `🌞 Dzuhur: ${timings.Dhuhr}\\n`;\n    replyMessage += `🌤️ Ashar: ${timings.Asr}\\n`;\n    replyMessage += `🌅 Maghrib: ${timings.Maghrib}\\n`;\n    replyMessage += `🌙 Isya: ${timings.Isha}\\n\\n`;\n  } else {\n    // Format untuk MyQuran API v2 (jika berbeda)\n    replyMessage += `🌅 Subuh: ${timings.subuh || timings.Fajr}\\n`;\n    replyMessage += `🌞 Dzuhur: ${timings.dzuhur || timings.Dhuhr}\\n`;\n    replyMessage += `🌤️ Ashar: ${timings.ashar || timings.Asr}\\n`;\n    replyMessage += `🌅 Maghrib: ${timings.maghrib || timings.Maghrib}\\n`;\n    replyMessage += `🌙 Isya: ${timings.isya || timings.Isha}\\n\\n`;\n  }\n  \n  replyMessage += `🤲 Semoga Allah memudahkan ibadah kita\\n`;\n  replyMessage += `📡 _Sumber: ${prayerData.source === 'aladhan' ? 'Aladhan API' : 'MyQuran API'}_`;\n} else {\n  replyMessage = '🙏 Maaf, jadwal sholat tidak dapat diambil saat ini. Silakan coba lagi nanti.';\n}\n\nreturn {\n  reply: replyMessage,\n  number: originalRequest.number\n};"
+      },
+      "id": "format-prayer-response",
+      "name": "Format Prayer Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1560, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.messageType}}",
+              "operation": "equal",
+              "value2": "ai_chat"
+            }
+          ]
+        }
+      },
+      "id": "check-ai-chat",
+      "name": "Check AI Chat",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{$env.OPENROUTER_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "{{$env.OPENROUTER_MODEL || 'z-ai/glm-4.5-air:free'}}"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"system\", \"content\": \"Anda adalah asisten AI untuk masjid yang membantu jamaah dengan pertanyaan seputar Islam, kegiatan masjid, dan kehidupan sehari-hari. Jawab dengan ramah, informatif, dan sesuai ajaran Islam. Gunakan bahasa Indonesia yang sopan dan mudah dipahami.\"}, {\"role\": \"user\", \"content\": \"{{$json.analysis.question}}\"}]"
+            },
+            {
+              "name": "max_tokens",
+              "value": "500"
+            },
+            {
+              "name": "temperature",
+              "value": "0.7"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "openrouter-ai",
+      "name": "OpenRouter AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1120, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Format response dari AI\nconst response = $json;\nconst originalRequest = $input.first().json;\n\nlet replyMessage = '';\n\nif (response.choices && response.choices.length > 0) {\n  replyMessage = response.choices[0].message.content;\n  \n  // Add Islamic greeting if not present\n  if (!replyMessage.includes('السلام') && !replyMessage.includes('Assalamu')) {\n    replyMessage = '🤝 Wa\\'alaikumussalam warahmatullahi wabarakatuh\\n\\n' + replyMessage;\n  }\n  \n  // Add footer\n  replyMessage += '\\n\\n🕌 _Bot Masjid AI - Melayani dengan hati_';\n} else {\n  replyMessage = '🙏 Maaf, saya tidak dapat memproses pertanyaan Anda saat ini. Silakan coba lagi nanti.';\n}\n\nreturn {\n  reply: replyMessage,\n  number: originalRequest.number\n};"
+      },
+      "id": "format-ai-response",
+      "name": "Format AI Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1340, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.messageType}}",
+              "operation": "equal",
+              "value2": "admin_broadcast"
+            }
+          ]
+        }
+      },
+      "id": "check-admin-broadcast",
+      "name": "Check Admin Broadcast",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [900, 600]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Handle admin broadcast\nconst data = $json;\nconst broadcastMessage = data.analysis.message;\n\n// Format broadcast message\nconst formattedMessage = `📢 *PENGUMUMAN MASJID*\\n\\n${broadcastMessage}\\n\\n🕌 _Pengurus Masjid_`;\n\n// Return broadcast data\nreturn {\n  type: 'broadcast',\n  payload: {\n    message: formattedMessage,\n    excludeNumbers: [data.analysis.adminNumber] // Exclude admin from broadcast\n  },\n  adminConfirmation: {\n    reply: `✅ Broadcast berhasil dikirim!\\n\\nPesan: ${broadcastMessage}`,\n    number: data.number\n  }\n};"
+      },
+      "id": "process-admin-broadcast",
+      "name": "Process Admin Broadcast",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1120, 600]
+    },
+    {
+      "parameters": {
+        "url": "{{$env.N8N_WEBHOOK_URL}}/webhook/broadcast",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "message",
+              "value": "={{$json.payload.message}}"
+            },
+            {
+              "name": "excludeNumbers",
+              "value": "={{$json.payload.excludeNumbers}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "send-broadcast",
+      "name": "Send Broadcast",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1340, 600]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Return admin confirmation\nconst broadcastData = $input.first().json;\n\nreturn {\n  reply: broadcastData.adminConfirmation.reply,\n  number: broadcastData.adminConfirmation.number\n};"
+      },
+      "id": "admin-broadcast-confirmation",
+      "name": "Admin Broadcast Confirmation",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1560, 600]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Handle fallback for unrecognized messages\nconst data = $json;\n\nlet replyMessage = '';\n\nif (data.messageType === 'admin_command') {\n  replyMessage = `❌ Command tidak dikenali: ${data.analysis.command}\\n\\n` +\n    `📋 Command yang tersedia:\\n` +\n    `• /broadcast [pesan] - Kirim pengumuman\\n` +\n    `• /status - Cek status bot\\n` +\n    `• /stats - Lihat statistik`;\n} else {\n  replyMessage = `🤖 Halo! Saya adalah Bot Masjid AI.\\n\\n` +\n    `🕌 Saya bisa membantu Anda dengan:\\n` +\n    `• Jadwal sholat (ketik: jadwal sholat)\\n` +\n    `• Pertanyaan seputar Islam\\n` +\n    `• Informasi kegiatan masjid\\n\\n` +\n    `💬 Silakan ajukan pertanyaan Anda!`;\n}\n\nreturn {\n  reply: replyMessage,\n  number: data.number\n};"
+      },
+      "id": "fallback-response",
+      "name": "Fallback Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [900, 800]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\"reply\": $json.reply} }}"
+      },
+      "id": "response-node",
+      "name": "Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1780, 400]
+    }
+  ],
+  "connections": {
+    "WhatsApp Webhook": {
+      "main": [
+        [
+          {
+            "node": "Message Analyzer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message Analyzer": {
+      "main": [
+        [
+          {
+            "node": "Switch Message Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch Message Type": {
+      "main": [
+        [
+          {
+            "node": "Get City ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check AI Chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get City ID": {
+      "main": [
+        [
+          {
+            "node": "Process City Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process City Data": {
+      "main": [
+        [
+          {
+            "node": "Format Prayer Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Prayer Schedule": {
+      "main": [
+        [
+          {
+            "node": "Format Prayer Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Prayer Response": {
+      "main": [
+        [
+          {
+            "node": "Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check AI Chat": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter AI",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Admin Broadcast",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter AI": {
+      "main": [
+        [
+          {
+            "node": "Format AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format AI Response": {
+      "main": [
+        [
+          {
+            "node": "Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Admin Broadcast": {
+      "main": [
+        [
+          {
+            "node": "Process Admin Broadcast",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fallback Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Admin Broadcast": {
+      "main": [
+        [
+          {
+            "node": "Send Broadcast",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Broadcast": {
+      "main": [
+        [
+          {
+            "node": "Admin Broadcast Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Admin Broadcast Confirmation": {
+      "main": [
+        [
+          {
+            "node": "Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fallback Response": {
+      "main": [
+        [
+          {
+            "node": "Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "versionId": "1.0.0",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "masjid-ai-agent-workflow",
+  "tags": []
+}
