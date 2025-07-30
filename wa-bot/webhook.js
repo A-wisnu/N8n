@@ -5,7 +5,9 @@ require('dotenv').config();
 class WebhookHandler {
   constructor() {
     this.app = express();
-    this.port = process.env.PORT || 3000;
+    this.port = process.env.PORT || 3001;
+    this.wahaBaseUrl = process.env.WAHA_BASE_URL || 'http://localhost:3000';
+    this.wahaApiKey = process.env.WAHA_API_KEY || 'admin';
     this.setupMiddleware();
     this.setupRoutes();
   }
@@ -41,14 +43,40 @@ class WebhookHandler {
       res.json({
         status: 'OK',
         timestamp: new Date().toISOString(),
-        service: 'Masjid WhatsApp Bot Webhook'
+        service: 'Masjid WhatsApp Bot Webhook (WAHA)',
+        version: '2.0'
       });
+    });
+
+    // WAHA webhook endpoint for receiving messages
+    this.app.post('/webhook/waha', async (req, res) => {
+      try {
+        const webhookData = req.body;
+        console.log('📨 WAHA webhook received:', JSON.stringify(webhookData, null, 2));
+
+        // Acknowledge receipt immediately
+        res.json({
+          success: true,
+          message: 'Webhook received',
+          timestamp: new Date().toISOString()
+        });
+
+        // Process the webhook data based on event type
+        await this.handleWAHAWebhook(webhookData);
+
+      } catch (error) {
+        console.error('❌ Error handling WAHA webhook:', error);
+        res.status(500).json({
+          error: 'Internal server error',
+          message: error.message
+        });
+      }
     });
 
     // Webhook endpoint for receiving broadcast messages from n8n
     this.app.post('/webhook/broadcast', async (req, res) => {
       try {
-        const { message, excludeNumbers = [] } = req.body;
+        const { message, excludeNumbers = [], sessionName = 'default' } = req.body;
 
         if (!message) {
           return res.status(400).json({
@@ -57,15 +85,10 @@ class WebhookHandler {
           });
         }
 
-        console.log('📢 Broadcast request received:', { message, excludeNumbers });
+        console.log('📢 Broadcast request received:', { message, excludeNumbers, sessionName });
 
-        // Here you would integrate with your WhatsApp bot instance
-        // For now, we'll just log and return success
-        const result = {
-          success: true,
-          message: 'Broadcast initiated',
-          timestamp: new Date().toISOString()
-        };
+        // Send broadcast via WAHA
+        const result = await this.sendBroadcastViaWAHA(message, excludeNumbers, sessionName);
 
         res.json(result);
 
@@ -78,22 +101,24 @@ class WebhookHandler {
       }
     });
 
-    // Webhook endpoint for receiving status updates
-    this.app.post('/webhook/status', async (req, res) => {
+    // Webhook endpoint for sending individual messages
+    this.app.post('/webhook/send-message', async (req, res) => {
       try {
-        const statusData = req.body;
-        console.log('📊 Status update received:', statusData);
+        const { chatId, text, sessionName = 'default' } = req.body;
 
-        // Process status update (log to database, notify admins, etc.)
-        
-        res.json({
-          success: true,
-          message: 'Status update processed',
-          timestamp: new Date().toISOString()
-        });
+        if (!chatId || !text) {
+          return res.status(400).json({
+            error: 'chatId and text are required'
+          });
+        }
+
+        console.log(`💬 Send message request: ${chatId} -> ${text}`);
+
+        const result = await this.sendMessageViaWAHA(chatId, text, sessionName);
+        res.json(result);
 
       } catch (error) {
-        console.error('❌ Error handling status webhook:', error);
+        console.error('❌ Error sending message:', error);
         res.status(500).json({
           error: 'Internal server error',
           message: error.message
@@ -101,10 +126,35 @@ class WebhookHandler {
       }
     });
 
-    // Webhook endpoint for receiving prayer time notifications
+    // Webhook endpoint for sending images
+    this.app.post('/webhook/send-image', async (req, res) => {
+      try {
+        const { chatId, imageUrl, caption = '', sessionName = 'default' } = req.body;
+
+        if (!chatId || !imageUrl) {
+          return res.status(400).json({
+            error: 'chatId and imageUrl are required'
+          });
+        }
+
+        console.log(`🖼️ Send image request: ${chatId} -> ${imageUrl}`);
+
+        const result = await this.sendImageViaWAHA(chatId, imageUrl, caption, sessionName);
+        res.json(result);
+
+      } catch (error) {
+        console.error('❌ Error sending image:', error);
+        res.status(500).json({
+          error: 'Internal server error',
+          message: error.message
+        });
+      }
+    });
+
+    // Webhook endpoint for prayer time notifications
     this.app.post('/webhook/prayer-notification', async (req, res) => {
       try {
-        const { prayerName, time, city } = req.body;
+        const { prayerName, time, city, sessionName = 'default' } = req.body;
 
         if (!prayerName || !time) {
           return res.status(400).json({
@@ -120,17 +170,18 @@ class WebhookHandler {
           `📍 Lokasi: ${city || process.env.DEFAULT_CITY}\n\n` +
           `🤲 Mari bersiap untuk menunaikan sholat ${prayerName}`;
 
-        // Here you would send this to all users via WhatsApp bot
-        const result = {
+        // Broadcast prayer notification
+        const result = await this.sendBroadcastViaWAHA(notificationMessage, [], sessionName);
+
+        res.json({
           success: true,
           message: 'Prayer notification sent',
           prayerName,
           time,
           city,
+          broadcastResult: result,
           timestamp: new Date().toISOString()
-        };
-
-        res.json(result);
+        });
 
       } catch (error) {
         console.error('❌ Error handling prayer notification webhook:', error);
@@ -144,7 +195,7 @@ class WebhookHandler {
     // Webhook endpoint for admin commands
     this.app.post('/webhook/admin', async (req, res) => {
       try {
-        const { command, data, adminNumber } = req.body;
+        const { command, data, adminNumber, sessionName = 'default' } = req.body;
 
         // Verify admin authorization
         const adminNumbers = process.env.ADMIN_NUMBERS ? process.env.ADMIN_NUMBERS.split(',') : [];
@@ -160,18 +211,21 @@ class WebhookHandler {
 
         switch (command) {
           case 'broadcast':
-            result = await this.handleAdminBroadcast(data);
+            result = await this.handleAdminBroadcast(data, sessionName);
             break;
           case 'status':
-            result = await this.handleAdminStatus();
+            result = await this.handleAdminStatus(sessionName);
             break;
           case 'stats':
-            result = await this.handleAdminStats();
+            result = await this.handleAdminStats(sessionName);
+            break;
+          case 'screenshot':
+            result = await this.handleAdminScreenshot(sessionName);
             break;
           default:
             return res.status(400).json({
               error: 'Unknown admin command',
-              availableCommands: ['broadcast', 'status', 'stats']
+              availableCommands: ['broadcast', 'status', 'stats', 'screenshot']
             });
         }
 
@@ -231,6 +285,34 @@ class WebhookHandler {
       }
     });
 
+    // Get WAHA session status
+    this.app.get('/api/session/status/:sessionName?', async (req, res) => {
+      try {
+        const sessionName = req.params.sessionName || 'default';
+        const status = await this.getWAHASessionStatus(sessionName);
+        res.json(status);
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // Get WAHA screenshot
+    this.app.get('/api/screenshot/:sessionName?', async (req, res) => {
+      try {
+        const sessionName = req.params.sessionName || 'default';
+        const screenshot = await this.getWAHAScreenshot(sessionName);
+        
+        res.set({
+          'Content-Type': 'image/png',
+          'Content-Length': screenshot.length
+        });
+        
+        res.send(screenshot);
+      } catch (error) {
+        res.status(500).json({ error: error.message });
+      }
+    });
+
     // 404 handler
     this.app.use('*', (req, res) => {
       res.status(404).json({
@@ -250,91 +332,259 @@ class WebhookHandler {
     });
   }
 
+  async handleWAHAWebhook(webhookData) {
+    // Handle different types of WAHA webhooks
+    const { event, session, payload } = webhookData;
+
+    switch (event) {
+      case 'message':
+        console.log(`📩 Message received in session ${session}:`, payload);
+        // Forward to n8n or process directly
+        if (process.env.N8N_WEBHOOK_URL) {
+          await this.forwardToN8n({
+            type: 'message',
+            session,
+            message: payload
+          });
+        }
+        break;
+        
+      case 'session.status':
+        console.log(`📱 Session status changed for ${session}:`, payload.status);
+        break;
+        
+      default:
+        console.log(`🔔 Unknown webhook event: ${event}`);
+    }
+  }
+
+  async forwardToN8n(data) {
+    try {
+      await axios.post(process.env.N8N_WEBHOOK_URL, data, {
+        timeout: 10000,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      console.log('✅ Data forwarded to n8n');
+    } catch (error) {
+      console.error('❌ Error forwarding to n8n:', error.message);
+    }
+  }
+
+  async sendMessageViaWAHA(chatId, text, sessionName = 'default') {
+    try {
+      const response = await axios.post(`${this.wahaBaseUrl}/api/sendText`, {
+        session: sessionName,
+        chatId: chatId,
+        text: text
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-Key': this.wahaApiKey
+        }
+      });
+
+      return {
+        success: true,
+        action: 'message_sent',
+        chatId,
+        text,
+        wahaResponse: response.data
+      };
+    } catch (error) {
+      throw new Error(`Failed to send message via WAHA: ${error.message}`);
+    }
+  }
+
+  async sendImageViaWAHA(chatId, imageUrl, caption = '', sessionName = 'default') {
+    try {
+      const response = await axios.post(`${this.wahaBaseUrl}/api/sendImage`, {
+        session: sessionName,
+        chatId: chatId,
+        url: imageUrl,
+        caption: caption
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-Key': this.wahaApiKey
+        }
+      });
+
+      return {
+        success: true,
+        action: 'image_sent',
+        chatId,
+        imageUrl,
+        caption,
+        wahaResponse: response.data
+      };
+    } catch (error) {
+      throw new Error(`Failed to send image via WAHA: ${error.message}`);
+    }
+  }
+
+  async sendBroadcastViaWAHA(message, excludeNumbers = [], sessionName = 'default') {
+    try {
+      // Get all chats from WAHA
+      const chatsResponse = await axios.get(`${this.wahaBaseUrl}/api/chats`, {
+        params: { session: sessionName },
+        headers: { 'X-Api-Key': this.wahaApiKey }
+      });
+
+      const chats = chatsResponse.data;
+      const privateChats = chats.filter(chat => 
+        !chat.id.includes('@g.us') && 
+        !excludeNumbers.includes(chat.id) &&
+        !excludeNumbers.includes(chat.id.replace('@c.us', ''))
+      );
+
+      console.log(`📢 Broadcasting to ${privateChats.length} chats`);
+
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (const chat of privateChats) {
+        try {
+          await this.sendMessageViaWAHA(chat.id, message, sessionName);
+          successCount++;
+          
+          // Delay between messages to avoid spam detection
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } catch (error) {
+          console.error(`❌ Broadcast error for ${chat.id}:`, error.message);
+          errorCount++;
+        }
+      }
+
+      return {
+        success: true,
+        action: 'broadcast_completed',
+        message,
+        successCount,
+        errorCount,
+        totalChats: privateChats.length
+      };
+    } catch (error) {
+      throw new Error(`Failed to broadcast via WAHA: ${error.message}`);
+    }
+  }
+
+  async getWAHASessionStatus(sessionName = 'default') {
+    try {
+      const response = await axios.get(`${this.wahaBaseUrl}/api/sessions/${sessionName}`, {
+        headers: { 'X-Api-Key': this.wahaApiKey }
+      });
+      return response.data;
+    } catch (error) {
+      return { status: 'ERROR', error: error.message };
+    }
+  }
+
+  async getWAHAScreenshot(sessionName = 'default') {
+    try {
+      const response = await axios.get(`${this.wahaBaseUrl}/api/screenshot`, {
+        params: { session: sessionName },
+        headers: { 'X-Api-Key': this.wahaApiKey },
+        responseType: 'arraybuffer'
+      });
+      return Buffer.from(response.data);
+    } catch (error) {
+      throw new Error(`Failed to get screenshot: ${error.message}`);
+    }
+  }
+
   async handleMessageReply(payload) {
-    // Handle message reply from n8n
-    const { number, message } = payload;
-    
-    // Here you would send the message via WhatsApp bot
-    console.log(`💬 Sending reply to ${number}: ${message}`);
-    
-    return {
-      success: true,
-      action: 'message_sent',
-      number,
-      message
-    };
+    const { chatId, message, sessionName = 'default' } = payload;
+    return await this.sendMessageViaWAHA(chatId, message, sessionName);
   }
 
   async handleBroadcast(payload) {
-    // Handle broadcast message
-    const { message, excludeNumbers = [] } = payload;
-    
-    console.log(`📢 Broadcasting message: ${message}`);
-    
-    return {
-      success: true,
-      action: 'broadcast_initiated',
-      message,
-      excludeNumbers
-    };
+    const { message, excludeNumbers = [], sessionName = 'default' } = payload;
+    return await this.sendBroadcastViaWAHA(message, excludeNumbers, sessionName);
   }
 
   async handlePrayerReminder(payload) {
-    // Handle prayer time reminder
-    const { prayerName, time, city } = payload;
+    const { prayerName, time, city, sessionName = 'default' } = payload;
     
-    console.log(`🕌 Prayer reminder: ${prayerName} at ${time}`);
+    const message = `🕌 *Waktu Sholat ${prayerName}*\n\n` +
+      `⏰ Waktu: ${time}\n` +
+      `📍 Lokasi: ${city}\n\n` +
+      `🤲 Mari bersiap untuk menunaikan sholat ${prayerName}`;
     
-    return {
-      success: true,
-      action: 'prayer_reminder_sent',
-      prayerName,
-      time,
-      city
-    };
+    return await this.sendBroadcastViaWAHA(message, [], sessionName);
   }
 
-  async handleAdminBroadcast(data) {
-    // Handle admin broadcast command
+  async handleAdminBroadcast(data, sessionName = 'default') {
     const { message } = data;
-    
-    console.log(`👨‍💼 Admin broadcast: ${message}`);
-    
-    return {
-      action: 'admin_broadcast',
-      message,
-      status: 'initiated'
-    };
+    return await this.sendBroadcastViaWAHA(message, [], sessionName);
   }
 
-  async handleAdminStatus() {
-    // Return bot status for admin
+  async handleAdminStatus(sessionName = 'default') {
+    const status = await this.getWAHASessionStatus(sessionName);
     return {
       action: 'status_check',
-      status: 'online',
+      sessionName,
+      status: status.status,
+      details: status,
       uptime: process.uptime(),
       memory: process.memoryUsage(),
       timestamp: new Date().toISOString()
     };
   }
 
-  async handleAdminStats() {
-    // Return bot statistics for admin
-    return {
-      action: 'stats',
-      stats: {
-        messagesProcessed: 0, // This would come from actual tracking
-        activeUsers: 0,
-        uptime: process.uptime(),
-        timestamp: new Date().toISOString()
-      }
-    };
+  async handleAdminStats(sessionName = 'default') {
+    try {
+      const chatsResponse = await axios.get(`${this.wahaBaseUrl}/api/chats`, {
+        params: { session: sessionName },
+        headers: { 'X-Api-Key': this.wahaApiKey }
+      });
+
+      const chats = chatsResponse.data;
+      const privateChats = chats.filter(chat => !chat.id.includes('@g.us'));
+      const groupChats = chats.filter(chat => chat.id.includes('@g.us'));
+
+      return {
+        action: 'stats',
+        sessionName,
+        stats: {
+          totalChats: chats.length,
+          privateChats: privateChats.length,
+          groupChats: groupChats.length,
+          uptime: process.uptime(),
+          timestamp: new Date().toISOString()
+        }
+      };
+    } catch (error) {
+      return {
+        action: 'stats',
+        error: error.message
+      };
+    }
+  }
+
+  async handleAdminScreenshot(sessionName = 'default') {
+    try {
+      const screenshot = await this.getWAHAScreenshot(sessionName);
+      return {
+        action: 'screenshot',
+        sessionName,
+        screenshotSize: screenshot.length,
+        message: 'Screenshot captured successfully'
+      };
+    } catch (error) {
+      return {
+        action: 'screenshot',
+        error: error.message
+      };
+    }
   }
 
   start() {
     this.app.listen(this.port, () => {
       console.log(`🚀 Webhook server started on port ${this.port}`);
       console.log(`📡 Health check: http://localhost:${this.port}/health`);
+      console.log(`🔗 WAHA webhook: http://localhost:${this.port}/webhook/waha`);
     });
   }
 }
